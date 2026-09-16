@@ -55,7 +55,8 @@ private void OnDisable() => EventManager.UnregisterEvent(EventTypes.PlayerDead, 
 private void OnPlayerDead() => Debug.Log("Player dead.");
 ```
 
-**3. Invoke it from anywhere:**
+**3. Invoke it where the event actually happens** — e.g. wherever your player's health logic
+detects death, not in the listener itself:
 
 ```csharp
 EventManager.InvokeEvent(EventTypes.PlayerDead);
@@ -80,7 +81,7 @@ private void OnInteractableUndetected(BoolArgs args)
     Debug.Log($"Interactable Undetected: {args.Value}");
 }
 
-// Elsewhere:
+// Wherever this event actually happens, e.g. an interaction-detection script:
 EventManager.InvokeEvent(EventTypes.InteractableUndetected, new BoolArgs(true));
 ```
 
