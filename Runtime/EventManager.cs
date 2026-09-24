@@ -1,128 +1,84 @@
 using System;
 using System.Collections.Generic;
+using UnityEngine;
 
 namespace EventSystem
 {
     /// <summary>
-    /// A global publish/subscribe event manager, keyed by <see cref="EventTypes"/>. Covers two shapes:
-    /// a plain event that carries no data, and an event that carries one piece of data (any of the
-    /// built-in <c>Args</c> types, or a custom one you generate via
-    /// <c>Assets/Create/Event System/Args Script</c>).
+    /// A global publish/subscribe event bus keyed by type. An event is any type - usually a small
+    /// <c>readonly struct</c> declared by the system that raises it - so every system brings its own
+    /// events and nothing ever has to be added to a shared list:
     /// <code>
-    /// // No data:
-    /// EventManager.RegisterEvent(EventTypes.PlayerDead, OnPlayerDead);
-    /// EventManager.InvokeEvent(EventTypes.PlayerDead);
-    /// EventManager.UnregisterEvent(EventTypes.PlayerDead, OnPlayerDead);
+    /// public readonly struct PlayerDied { }
     ///
-    /// // With data:
-    /// EventManager.RegisterEvent&lt;BoolArgs&gt;(EventTypes.InteractableUndetected, OnInteractableUndetected);
-    /// EventManager.InvokeEvent(EventTypes.InteractableUndetected, new BoolArgs(true));
-    /// EventManager.UnregisterEvent&lt;BoolArgs&gt;(EventTypes.InteractableUndetected, OnInteractableUndetected);
+    /// public readonly struct HealthChanged
+    /// {
+    ///     public readonly int Value;
+    ///     public HealthChanged(int value) => Value = value;
+    /// }
+    ///
+    /// EventManager.Register&lt;HealthChanged&gt;(OnHealthChanged);
+    /// EventManager.Invoke(new HealthChanged(80));
+    /// EventManager.Unregister&lt;HealthChanged&gt;(OnHealthChanged);
     /// </code>
     /// </summary>
     /// <remarks>
-    /// For every MonoBehaviour listener, register in <c>OnEnable</c> and unregister in
-    /// <c>OnDisable</c> - EventManager has no knowledge of Unity's object lifecycle, so a listener
-    /// that forgets to unregister keeps receiving events (and can throw on a destroyed object) after
-    /// it should be gone.
+    /// Every event type gets its own static channel, so <see cref="Invoke{T}(T)"/> is a static field read
+    /// and a delegate call: no dictionary lookup, no boxing, and no allocation when the event is a struct.
+    /// For every MonoBehaviour listener, register in <c>OnEnable</c> and unregister in <c>OnDisable</c> -
+    /// the EventManager knows nothing about Unity's object lifecycle.
     /// </remarks>
     public static class EventManager
     {
-        private static readonly Dictionary<EventTypes, Action> ParameterlessHandlers = new();
-        private static readonly Dictionary<EventTypes, Delegate> ArgHandlers = new();
+        // One "clear" per channel ever used, so Clear() can reach every channel without knowing their types.
+        private static readonly List<Action> ChannelClears = new();
 
-        /// <summary>Registers a handler for a parameterless event.</summary>
-        public static void RegisterEvent(EventTypes type, Action handler)
+        /// <summary>Starts calling <paramref name="handler"/> whenever a <typeparamref name="T"/> is invoked.</summary>
+        public static void Register<T>(Action<T> handler)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
 
-            ParameterlessHandlers[type] = ParameterlessHandlers.TryGetValue(type, out var existing)
-                ? existing + handler
-                : handler;
+            Channel<T>.Handlers += handler;
         }
 
-        /// <summary>Unregisters a previously registered parameterless handler. A no-op if it was never registered.</summary>
-        public static void UnregisterEvent(EventTypes type, Action handler)
+        /// <summary>Stops calling <paramref name="handler"/>. A no-op if it was never registered.</summary>
+        public static void Unregister<T>(Action<T> handler)
         {
             if (handler == null) throw new ArgumentNullException(nameof(handler));
 
-            if (!ParameterlessHandlers.TryGetValue(type, out var existing))
-            {
-                return;
-            }
-
-            var remaining = existing - handler;
-            if (remaining == null)
-            {
-                ParameterlessHandlers.Remove(type);
-            }
-            else
-            {
-                ParameterlessHandlers[type] = remaining;
-            }
+            Channel<T>.Handlers -= handler;
         }
 
-        /// <summary>Invokes every handler registered for the parameterless event <paramref name="type"/>.</summary>
-        public static void InvokeEvent(EventTypes type)
-        {
-            if (ParameterlessHandlers.TryGetValue(type, out var handler))
-            {
-                handler.Invoke();
-            }
-        }
+        /// <summary>Calls every handler registered for <typeparamref name="T"/> with <paramref name="evt"/>.</summary>
+        public static void Invoke<T>(T evt) => Channel<T>.Handlers?.Invoke(evt);
 
-        /// <summary>Registers a handler for an event that carries a <typeparamref name="T"/> payload.</summary>
-        public static void RegisterEvent<T>(EventTypes type, Action<T> handler)
-        {
-            if (handler == null) throw new ArgumentNullException(nameof(handler));
+        /// <summary>Invokes an event that carries no data, e.g. <c>EventManager.Invoke&lt;PlayerDied&gt;()</c>.</summary>
+        public static void Invoke<T>() where T : struct => Channel<T>.Handlers?.Invoke(default);
 
-            ArgHandlers[type] = ArgHandlers.TryGetValue(type, out var existing)
-                ? Delegate.Combine(existing, handler)
-                : handler;
-        }
+        /// <summary>Whether anything listens to <typeparamref name="T"/> - e.g. to skip building an expensive event.</summary>
+        public static bool HasListeners<T>() => Channel<T>.Handlers != null;
 
-        /// <summary>Unregisters a previously registered handler for a data-carrying event. A no-op if it was never registered.</summary>
-        public static void UnregisterEvent<T>(EventTypes type, Action<T> handler)
-        {
-            if (handler == null) throw new ArgumentNullException(nameof(handler));
+        /// <summary>Unregisters every handler of <typeparamref name="T"/>.</summary>
+        public static void Clear<T>() => Channel<T>.Handlers = null;
 
-            if (!ArgHandlers.TryGetValue(type, out var existing))
-            {
-                return;
-            }
-
-            var remaining = Delegate.Remove(existing, handler);
-            if (remaining == null)
-            {
-                ArgHandlers.Remove(type);
-            }
-            else
-            {
-                ArgHandlers[type] = remaining;
-            }
-        }
-
-        /// <summary>Invokes every handler registered for <paramref name="type"/> with <paramref name="args"/>.</summary>
-        public static void InvokeEvent<T>(EventTypes type, T args)
-        {
-            if (ArgHandlers.TryGetValue(type, out var handler))
-            {
-                ((Action<T>)handler).Invoke(args);
-            }
-        }
-
-        /// <summary>Unregisters every handler for every event.</summary>
+        /// <summary>Unregisters every handler of every event.</summary>
         public static void Clear()
         {
-            ParameterlessHandlers.Clear();
-            ArgHandlers.Clear();
+            foreach (var clear in ChannelClears)
+            {
+                clear();
+            }
         }
 
-        /// <summary>Unregisters every handler - parameterless or data-carrying - for one specific event.</summary>
-        public static void ClearEvent(EventTypes type)
+        // Keeps stale handlers out when "Enter Play Mode Options" skips the domain reload.
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetStatics() => Clear();
+
+        private static class Channel<T>
         {
-            ParameterlessHandlers.Remove(type);
-            ArgHandlers.Remove(type);
+            public static Action<T> Handlers;
+
+            static Channel() => ChannelClears.Add(() => Handlers = null);
         }
     }
 }

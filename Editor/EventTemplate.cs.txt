@@ -1,0 +1,11 @@
+#ROOTNAMESPACEBEGIN#
+public readonly struct #SCRIPTNAME#
+{
+    public readonly int Value;
+
+    public #SCRIPTNAME#(int value)
+    {
+        Value = value;
+    }
+}
+#ROOTNAMESPACEEND#

@@ -1,27 +1,24 @@
 # EventSystem
 
-Enum-keyed publish/subscribe event system for Unity, with type-safe data payloads.
+Type-keyed publish/subscribe event bus for Unity. Zero dependencies, zero allocations.
 
 ![EventSystem](ScreenShots/EventSystem.png)
 
 ## Overview
 
-EventSystem is a lightweight, code-first event manager for Unity. Every event is a member of a
-single `EventTypes` enum, and can either carry no data or a single typed payload (`IntArgs`,
-`BoolArgs`, `Vector3Args`, or any custom class you generate). There's no ScriptableObject and no
-Inspector setup — everything is registered, invoked, and unregistered directly in code.
+EventSystem is a lightweight, code-first event bus. An event is simply a type, usually a small
+`readonly struct` declared by the system that raises it. There's no shared enum to edit and no
+ScriptableObject: every system brings its own events, so packages that use EventSystem never have to
+touch it.
 
 ## Features
 
-- Static `EventManager` API: `RegisterEvent`, `UnregisterEvent`, `InvokeEvent` - for both
-  parameterless and data-carrying events
-- A single `EventTypes` enum as the source of truth for every event name in the project
-- 8 built-in payload types: `IntArgs`, `FloatArgs`, `BoolArgs`, `StringArgs`, `GameObjectArgs`,
-  `Vector2Args`, `Vector3Args`, `AudioArgs`
-- `Create > Event System > Args Script` menu item generates a ready-to-edit custom payload class
-  (e.g. `EnemyArgs`, `PanelArgs`) from a template
-- Pure C# core with no coupling to any particular gameplay system - a publisher and its listeners
-  never reference each other
+- Static `EventManager` API: `Register<T>`, `Unregister<T>`, `Invoke<T>`, `HasListeners<T>`, `Clear`
+- Events are types: type-safe payloads, and no central list that every package has to add to
+- One static channel per event type: `Invoke` is a field read and a delegate call, with no dictionary
+  lookup, no boxing, and no allocation for struct events
+- `Create > Event System > Event Script` generates a ready-to-edit `readonly struct` event
+- Handlers are cleared automatically when entering Play Mode without a domain reload
 
 ## Setup
 
@@ -31,59 +28,46 @@ Inspector setup — everything is registered, invoked, and unregistered directly
 
 ### Installation
 
-Clone or download this repository, then copy the `EventSystem` folder into your project's
-`Assets/Scripts/` (or anywhere under `Assets/`). It's self-contained via its own assembly
-definitions - no other setup is required.
+Either:
+- **Package Manager:** `Window > Package Manager > + > Add package from git URL`, and enter
+  `https://github.com/fatihgezerx/EventSystem.git`
+- **Or** copy the repository into your project's `Assets/`.
+
+It has no dependencies, so it compiles in any project.
 
 ## Quick Start
 
-**1. Add your event's name to `EventTypes`:**
+**1. Declare an event.** Use `Create > Event System > Event Script`, or write it by hand:
 
 ```csharp
-public enum EventTypes
+public readonly struct HealthChanged
 {
-    PlayerDead,
+    public readonly int Value;
+
+    public HealthChanged(int value) => Value = value;
 }
+
+public readonly struct PlayerDied { }
 ```
 
-**2. Register a listener, e.g. in `OnEnable`/`OnDisable`:**
+**2. Register a listener**, e.g. in `OnEnable` / `OnDisable`:
 
 ```csharp
-private void OnEnable()  => EventManager.RegisterEvent(EventTypes.PlayerDead, OnPlayerDead);
-private void OnDisable() => EventManager.UnregisterEvent(EventTypes.PlayerDead, OnPlayerDead);
+private void OnEnable() => EventManager.Register<HealthChanged>(OnHealthChanged);
+private void OnDisable() => EventManager.Unregister<HealthChanged>(OnHealthChanged);
 
-private void OnPlayerDead() => Debug.Log("Player dead.");
+private void OnHealthChanged(HealthChanged e) => healthBar.value = e.Value;
 ```
 
-**3. Invoke it where the event actually happens** — e.g. wherever your player's health logic
-detects death, not in the listener itself:
+**3. Invoke it where it actually happens:**
 
 ```csharp
-EventManager.InvokeEvent(EventTypes.PlayerDead);
+EventManager.Invoke(new HealthChanged(80));
+EventManager.Invoke<PlayerDied>(); // an event with no data
 ```
 
-**If the event needs to carry data**, use one of the built-in `Args` types (or generate your own
-via `Create > Event System > Args Script`):
-
-```csharp
-private void OnEnable()
-{
-    EventManager.RegisterEvent<BoolArgs>(EventTypes.InteractableUndetected, OnInteractableUndetected);
-}
-
-private void OnDisable()
-{
-    EventManager.UnregisterEvent<BoolArgs>(EventTypes.InteractableUndetected, OnInteractableUndetected);
-}
-
-private void OnInteractableUndetected(BoolArgs args)
-{
-    Debug.Log($"Interactable Undetected: {args.Value}");
-}
-
-// Wherever this event actually happens, e.g. an interaction-detection script:
-EventManager.InvokeEvent(EventTypes.InteractableUndetected, new BoolArgs(true));
-```
+Register in `OnEnable` and unregister in `OnDisable`. The EventManager doesn't know about Unity's object
+lifecycle, so a listener that forgets to unregister keeps receiving events after it should be gone.
 
 ## License
 
