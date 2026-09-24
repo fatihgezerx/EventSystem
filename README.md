@@ -28,10 +28,9 @@ touch it.
 
 ### Installation
 
-Either:
-- **Package Manager:** `Window > Package Manager > + > Add package from git URL`, and enter
-  `https://github.com/fatihgezerx/EventSystem.git`
-- **Or** copy the repository into your project's `Assets/`.
+Clone or download this repository, then copy its contents into `Assets/Scripts/EventSystem/`. Systems
+that need EventSystem (e.g. InteractionSystem) can also download it there for you, from their setup
+dialog. Either way you get the same files, visible and editable in `Assets`.
 
 It has no dependencies, so it compiles in any project.
 

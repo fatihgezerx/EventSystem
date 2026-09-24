@@ -14,7 +14,6 @@
 - `Invoke<T>()` for events with no data, `HasListeners<T>()`, `Clear<T>()`.
 - `Create > Event System > Event Script` generates a `readonly struct` event.
 - Handlers are cleared when entering Play Mode without a domain reload.
-- `package.json`, so the package can be added from its git URL.
 
 ### Removed
 - `EventTypes` and the built-in `Args` payload types (`IntArgs`, `BoolArgs`...). Declare your own event
